@@ -24,6 +24,18 @@ import { buildMemoryAnchorForCompact, loadHonchoRuntime } from "./talmor-codex-p
 
 let cachedCompactClient = null;
 
+function logEvent(event, payload = {}) {
+  try {
+    console.log(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        event,
+        ...payload,
+      }),
+    );
+  } catch {}
+}
+
 async function loadRuntime() {
   const state = (await readState()) || {};
   const credentials = (await readCredentials()) || {};
@@ -173,6 +185,13 @@ async function handleCompact(runtime, bodyBuffer) {
   });
 
   const summary = typeof result?.output === "string" ? result.output : "";
+  logEvent("compact.morph.success", {
+    inputItems: Array.isArray(payload.input) ? payload.input.length : null,
+    messageCount: Array.isArray(messages) ? messages.length : null,
+    queryPreview: `${query ?? ""}`.slice(0, 160),
+    summaryChars: summary.length,
+    usage: result?.usage ?? null,
+  });
   return {
     output: [
       {
@@ -210,15 +229,33 @@ async function createServer() {
     const compactPath = req.url.startsWith("/v1/responses/compact") || req.url.startsWith("/responses/compact");
     if (compactPath && req.method === "POST") {
       const bodyBuffer = await collectBody(req);
+      const startedAt = Date.now();
       if (runtime.morphConfig.compactEnabled === false) {
         const targetUrl = buildTargetUrl(req.url, runtime.upstreamBaseUrl);
+        logEvent("compact.disabled.forward_upstream", {
+          path: req.url,
+          bytes: bodyBuffer.length,
+        });
         await proxyBufferedRequest(req, res, targetUrl, bodyBuffer);
         return;
       }
       try {
         const payload = await handleCompact(runtime, bodyBuffer);
+        logEvent("compact.completed", {
+          path: req.url,
+          bytes: bodyBuffer.length,
+          via: "morph",
+          elapsedMs: Date.now() - startedAt,
+        });
         writeJson(res, 200, payload);
       } catch (error) {
+        logEvent("compact.failed", {
+          path: req.url,
+          bytes: bodyBuffer.length,
+          elapsedMs: Date.now() - startedAt,
+          failOpen: runtime.failOpen,
+          message: error instanceof Error ? error.message : String(error),
+        });
         if (!runtime.failOpen) {
           writeJson(res, 502, {
             error: "talmor_codex_plugin_compact_failed",
@@ -228,6 +265,11 @@ async function createServer() {
         }
 
         const targetUrl = buildTargetUrl(req.url, runtime.upstreamBaseUrl);
+        logEvent("compact.fail_open.forward_upstream", {
+          path: req.url,
+          bytes: bodyBuffer.length,
+          elapsedMs: Date.now() - startedAt,
+        });
         await proxyBufferedRequest(req, res, targetUrl, bodyBuffer);
       }
       return;
