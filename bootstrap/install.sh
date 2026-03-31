@@ -29,7 +29,7 @@ else
   RESET=""
 fi
 
-REPO_SLUG="${TALMOR_CODEX_PLUGIN_GITHUB_REPO:-talmormaker/talmor-codex-plugin}"
+REPO_SLUG="${TALMOR_CODEX_PLUGIN_GITHUB_REPO:-Kesta-bos/talmor-codex-plugin}"
 REPO_URL="${TALMOR_CODEX_PLUGIN_REPO_URL:-https://github.com/${REPO_SLUG}.git}"
 INSTALL_DIR="${TALMOR_CODEX_PLUGIN_HOME_DIR:-$HOME/.talmor-codex-plugin-repo}"
 PLUGIN_NAME="talmor-codex-plugin"
@@ -224,9 +224,9 @@ fs.writeFileSync(marketplacePath, `${JSON.stringify(marketplace, null, 2)}\n`);
 NODE
 }
 
-configure_plugin_state() {
+install_plugin() {
   local cmd=(
-    node "${ADMIN_SCRIPT}" configure
+    node "${ADMIN_SCRIPT}" install
     --morph-api-key "${MORPH_API_KEY}"
     --morph-compact "${MORPH_COMPACT}"
     --morph-compact-token-limit "${MORPH_COMPACT_TOKEN_LIMIT}"
@@ -330,15 +330,15 @@ fi
 info "홈 스코프 marketplace를 등록합니다."
 register_home_marketplace
 
-info "플러그인 설정값을 저장합니다."
-CONFIG_OUTPUT="$(configure_plugin_state)"
-printf "%s\n" "${CONFIG_OUTPUT}"
+info "플러그인을 설치하고 Codex 설정과 연결합니다."
+INSTALL_OUTPUT="$(install_plugin)"
+printf "%s\n" "${INSTALL_OUTPUT}"
 
-success "bootstrap 준비가 완료되었습니다."
+success "bootstrap 설치가 완료되었습니다."
 printf "\n%s다음 단계%s\n" "${BOLD}" "${RESET}"
-printf "  1. Codex를 열고 %s/plugins%s 를 실행합니다.\n" "${BOLD}" "${RESET}"
-printf "  2. %s%s%s 플러그인을 설치합니다.\n" "${BOLD}" "${PLUGIN_NAME}" "${RESET}"
-printf "  3. 설치 후 %s/talmor-codex-plugin:install%s 을 1회 실행합니다.\n" "${BOLD}" "${RESET}"
+printf "  1. 실행 중인 Codex가 있다면 완전히 종료합니다.\n"
+printf "  2. Codex를 다시 실행합니다.\n"
+printf "  3. 필요하면 Codex에게 Talmor Codex Plugin 상태를 확인해 달라고 요청합니다.\n"
 printf "\n%s참고%s\n" "${BOLD}" "${RESET}"
-printf "  - 이 bootstrap은 API 키와 Morph/Honcho 설정을 미리 저장합니다.\n"
-printf "  - 실제 openai_base_url 전환, hooks 주입, runtime health 확인은 plugin install 스킬에서 마무리됩니다.\n"
+printf "  - 이 bootstrap은 marketplace 등록, plugin 활성화, openai_base_url 전환, hooks 주입, runtime health 확인까지 한 번에 수행합니다.\n"
+printf "  - 현재 Codex CLI에서는 plugin skill이 slash command로 노출되지 않으므로 별도 /talmor-codex-plugin:install 단계는 사용하지 않습니다.\n"

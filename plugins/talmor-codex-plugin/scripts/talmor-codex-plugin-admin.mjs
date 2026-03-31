@@ -20,10 +20,12 @@ import {
   healthcheckProxy,
   hooksManagedBy,
   isPidAlive,
+  managedPluginConfigName,
   morphManagedBegin,
   morphManagedEnd,
   normalizePort,
   nowIso,
+  parsePluginEnabled,
   parseTopLevelStringValue,
   pluginRoot,
   proxyBaseUrl,
@@ -37,10 +39,12 @@ import {
   removeIfExists,
   removeManagedBlock,
   removeManagedDeveloperInstructions,
+  removePluginSection,
   removeTopLevelStringValue,
   setTopLevelStringValue,
   sleep,
   upsertDeveloperInstructions,
+  upsertPluginEnabled,
   writeConfigText,
   writeCredentials,
   writeMorphConfig,
@@ -80,6 +84,7 @@ async function readCurrentConfig() {
     text,
     openaiBaseUrl: parseTopLevelStringValue(text, "openai_base_url"),
     developerInstructions: parseTopLevelStringValue(text, "developer_instructions"),
+    pluginEnabled: parsePluginEnabled(text, managedPluginConfigName),
   };
 }
 
@@ -563,7 +568,8 @@ async function installCommand(args) {
   }
 
   const managedInsertion = currentOpenaiBaseUrl == null;
-  const nextOpenAiConfigText = setTopLevelStringValue(currentConfig.text, "openai_base_url", expectedProxyBaseUrl);
+  let nextConfigText = setTopLevelStringValue(currentConfig.text, "openai_base_url", expectedProxyBaseUrl);
+  nextConfigText = upsertPluginEnabled(nextConfigText, true, managedPluginConfigName);
   const nextState = {
     installedAt: previousState?.installedAt || nowIso(),
     updatedAt: nowIso(),
@@ -598,7 +604,7 @@ async function installCommand(args) {
     throw new Error(proxyStatus.reason || "proxy를 정상적으로 시작하지 못했습니다.");
   }
 
-  await writeConfigText(nextOpenAiConfigText);
+  await writeConfigText(nextConfigText);
   await installManagedInstructions(honchoEnabled);
   const hooksStatus = await updateHooksFile(honchoEnabled);
   const instructionStatus = await readInstructionStatus();
@@ -614,9 +620,10 @@ async function installCommand(args) {
     honchoEnabled,
     hooksStatus,
     instructionStatus,
+    pluginEnabled: true,
     restartRecommended: true,
     message:
-      "설치는 완료되었습니다. 현재 실행 중인 Codex 세션에는 기존 설정이 남아 있을 수 있으므로 재시작을 권장합니다.",
+      "설치와 plugin 활성화가 완료되었습니다. 현재 실행 중인 Codex 세션에는 기존 설정이 남아 있을 수 있으므로 재시작을 권장합니다.",
   };
 }
 
@@ -673,7 +680,7 @@ async function configureCommand(args) {
     morphConfig,
     honchoConfig,
     message:
-      "설정값이 저장되었습니다. 이후 /plugins 에서 plugin 설치 후 /talmor-codex-plugin:install 을 실행하면 저장된 값을 재사용합니다.",
+      "설정값이 저장되었습니다. bootstrap-only 설치 흐름에서는 이후 install 단계에서 이 값을 자동으로 사용합니다.",
   };
 }
 
@@ -697,6 +704,7 @@ async function statusCommand() {
     hooksPath,
     agentsOverridePath: getAgentsOverridePath(),
     currentOpenaiBaseUrl: currentConfig.openaiBaseUrl,
+    pluginEnabled: currentConfig.pluginEnabled,
     state,
     morphConfig,
     honchoConfig,
@@ -718,6 +726,7 @@ async function uninstallCommand() {
   const stopStatus = await stopProxyInternal();
 
   let nextConfig = removeManagedDeveloperInstructions(currentConfig.text);
+  nextConfig = removePluginSection(nextConfig, managedPluginConfigName);
   let restored = false;
   if (state) {
     const expectedProxyBaseUrl = proxyBaseUrl(state.proxyPort || defaultProxyPort);
@@ -756,9 +765,10 @@ async function uninstallCommand() {
     restoredConfig: restored,
     hooksStatus,
     stopStatus,
+    pluginEnabled: false,
     restartRecommended: true,
     message:
-      "제거가 완료되었습니다. openai_base_url 및 주입된 지침 변경을 확실히 반영하려면 Codex를 재시작하는 것이 안전합니다.",
+      "제거가 완료되었습니다. plugin 활성화 해제와 openai_base_url 및 주입된 지침 변경을 확실히 반영하려면 Codex를 재시작하는 것이 안전합니다.",
   };
 }
 

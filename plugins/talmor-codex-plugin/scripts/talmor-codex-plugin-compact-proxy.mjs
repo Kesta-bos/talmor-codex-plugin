@@ -28,7 +28,7 @@ async function loadRuntime() {
   const state = (await readState()) || {};
   const credentials = (await readCredentials()) || {};
   if (!credentials.morphApiKey) {
-    throw new Error("Morph API 키가 설정되지 않았습니다. /talmor-codex-plugin:install 을 먼저 실행하세요.");
+    throw new Error("Morph API 키가 설정되지 않았습니다. bootstrap 설치를 다시 실행하거나 plugin 상태를 확인하세요.");
   }
   return {
     proxyPort: normalizePort(

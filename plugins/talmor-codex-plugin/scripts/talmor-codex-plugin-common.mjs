@@ -10,6 +10,8 @@ const __dirname = path.dirname(__filename);
 
 export const pluginRoot = path.dirname(__dirname);
 export const packageJsonPath = path.join(pluginRoot, "package.json");
+export const homeMarketplaceName = "home-marketplace";
+export const managedPluginConfigName = `talmor-codex-plugin@${homeMarketplaceName}`;
 
 export const defaultProxyPort = 4319;
 export const defaultUpstreamBaseUrl = "https://api.openai.com/v1";
@@ -252,6 +254,80 @@ export function removeTopLevelStringValue(tomlText, key) {
     start -= lastLine.length + 1;
   }
   return `${tomlText.slice(0, start)}${tomlText.slice(range.end)}`.replace(/\n{3,}/g, "\n\n");
+}
+
+function findNamedTableRange(tomlText, header) {
+  const regex = new RegExp(`^${escapeRegex(header)}\\s*$`, "m");
+  const match = regex.exec(tomlText);
+  if (!match) {
+    return null;
+  }
+
+  const start = match.index;
+  const firstLineEnd = tomlText.indexOf("\n", start);
+  if (firstLineEnd === -1) {
+    return { start, end: tomlText.length, body: "" };
+  }
+
+  const bodyStart = firstLineEnd + 1;
+  const remainder = tomlText.slice(bodyStart);
+  const nextSectionMatch = /^\[[^\n]+\]\s*$/m.exec(remainder);
+  const end = nextSectionMatch ? bodyStart + nextSectionMatch.index : tomlText.length;
+  return {
+    start,
+    end,
+    body: tomlText.slice(bodyStart, end),
+  };
+}
+
+export function parsePluginEnabled(tomlText, pluginConfigName = managedPluginConfigName) {
+  const header = `[plugins."${pluginConfigName}"]`;
+  const range = findNamedTableRange(tomlText, header);
+  if (!range) {
+    return null;
+  }
+  const match = /^enabled\s*=\s*(true|false)\s*$/m.exec(range.body);
+  if (!match) {
+    return null;
+  }
+  return match[1] === "true";
+}
+
+export function upsertPluginEnabled(tomlText, enabled, pluginConfigName = managedPluginConfigName) {
+  const header = `[plugins."${pluginConfigName}"]`;
+  const renderedBody = `enabled = ${enabled ? "true" : "false"}\n`;
+  const range = findNamedTableRange(tomlText, header);
+  if (range) {
+    const nextBody = /^enabled\s*=.*$/m.test(range.body)
+      ? range.body.replace(/^enabled\s*=.*$/m, renderedBody.trimEnd())
+      : `${range.body.trimEnd()}\n${renderedBody}`.replace(/^\n/, "");
+    return `${tomlText.slice(0, range.start)}${header}\n${nextBody.replace(/\n*$/, "\n")}${tomlText.slice(range.end)}`;
+  }
+
+  const trimmed = tomlText.trimEnd();
+  const block = `${proxyManagedComment}\n${header}\n${renderedBody}`;
+  if (!trimmed) {
+    return `${block}`;
+  }
+  return `${trimmed}\n\n${block}`;
+}
+
+export function removePluginSection(tomlText, pluginConfigName = managedPluginConfigName) {
+  const header = `[plugins."${pluginConfigName}"]`;
+  const range = findNamedTableRange(tomlText, header);
+  if (!range) {
+    return tomlText;
+  }
+
+  let start = range.start;
+  const before = tomlText.slice(0, start);
+  const lines = before.split("\n");
+  const lastLine = lines[lines.length - 1] ?? "";
+  if (lastLine.trim() === proxyManagedComment) {
+    start -= lastLine.length + 1;
+  }
+
+  return `${tomlText.slice(0, start)}${tomlText.slice(range.end)}`.replace(/\n{3,}/g, "\n\n").trimEnd();
 }
 
 export function cleanupManagedConfigText(tomlText) {

@@ -4,9 +4,8 @@
 
 이 플러그인은 다음 흐름을 기준으로 배포됩니다.
 
-- bootstrap 스크립트로 marketplace 등록과 초기 설정 저장
-- Codex의 `/plugins`에서 플러그인 설치
-- 최초 1회 `/talmor-codex-plugin:install` 실행
+- bootstrap 스크립트 한 번으로 설치와 설정 완료
+- Codex 재시작 후 바로 사용
 
 ## 주요 기능
 
@@ -21,14 +20,14 @@
 가장 쉬운 설치 방법은 bootstrap 스크립트를 실행하는 것입니다.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/talmormaker/talmor-codex-plugin/main/bootstrap/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Kesta-bos/talmor-codex-plugin/main/bootstrap/install.sh | bash
 ```
 
-bootstrap이 끝나면 Codex에서 아래 순서로 진행합니다.
+bootstrap이 끝나면 아래 순서로 진행합니다.
 
-1. `/plugins`
-2. `talmor-codex-plugin` 설치
-3. `/talmor-codex-plugin:install`
+1. 실행 중이던 Codex 종료
+2. Codex 재실행
+3. 필요시 상태 확인
 
 ## 저장소 구성
 

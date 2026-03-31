@@ -16,23 +16,22 @@
     "honcho",
     "memory"
   ],
-  "skills": "./skills",
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Talmor Codex Plugin",
     "shortDescription": "Codex용 Morph 및 Honcho 통합 플러그인입니다.",
-    "longDescription": "최초 1회 /talmor-codex-plugin:install 실행 후 런타임이 자동으로 유지되며, Morph Compact 처리와 Morph 및 Honcho 연동 도구를 함께 사용할 수 있습니다.",
+    "longDescription": "bootstrap 설치가 완료되면 런타임이 자동으로 유지되며, Morph Compact 처리와 Morph 및 Honcho 연동 도구를 함께 사용할 수 있습니다.",
     "developerName": "TalmorMaker",
     "category": "Productivity",
     "capabilities": [
       "Remote compact replacement",
       "Local runtime auto-start",
-      "Install and uninstall automation",
+      "Bootstrap-driven installation",
       "Morph integration foundation",
       "Honcho memory integration"
     ],
     "defaultPrompt": [
-      "Talmor Codex Plugin 상태를 먼저 확인하고, 필요하면 /talmor-codex-plugin:status 를 안내하세요."
+      "Talmor Codex Plugin이 활성화되어 있다면 관련 MCP 도구를 우선 사용하고, 필요하면 talmor_codex_plugin_status 도구로 상태를 확인하세요."
     ],
     "brandColor": "#0f766e"
   }
