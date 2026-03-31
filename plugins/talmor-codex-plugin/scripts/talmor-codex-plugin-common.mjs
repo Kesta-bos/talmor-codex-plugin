@@ -11,6 +11,7 @@ const __dirname = path.dirname(__filename);
 export const pluginRoot = path.dirname(__dirname);
 export const packageJsonPath = path.join(pluginRoot, "package.json");
 export const homeMarketplaceName = "home-marketplace";
+export const managedPluginName = "talmor-codex-plugin";
 export const managedPluginConfigName = `talmor-codex-plugin@${homeMarketplaceName}`;
 
 export const defaultProxyPort = 4319;
@@ -70,6 +71,14 @@ export function getConfigPath() {
   return path.join(getCodexHome(), "config.toml");
 }
 
+export function getPluginCacheBaseDir() {
+  return path.join(getCodexHome(), "plugins", "cache", homeMarketplaceName, managedPluginName);
+}
+
+export function getInstalledPluginRoot() {
+  return path.join(getPluginCacheBaseDir(), "local");
+}
+
 export function getHooksPath() {
   return path.join(getCodexHome(), "hooks.json");
 }
@@ -97,6 +106,57 @@ export function getStatePaths() {
 
 export async function ensureDir(dirPath) {
   await fsp.mkdir(dirPath, { recursive: true, mode: 0o700 });
+}
+
+async function copyDirRecursive(sourceDir, targetDir, shouldSkip) {
+  await ensureDir(targetDir);
+  const entries = await fsp.readdir(sourceDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const targetPath = path.join(targetDir, entry.name);
+    if (shouldSkip(sourcePath, entry)) {
+      continue;
+    }
+    if (entry.isDirectory()) {
+      await copyDirRecursive(sourcePath, targetPath, shouldSkip);
+      continue;
+    }
+    if (entry.isSymbolicLink()) {
+      const linkTarget = await fsp.readlink(sourcePath);
+      await fsp.symlink(linkTarget, targetPath);
+      continue;
+    }
+    await ensureDir(path.dirname(targetPath));
+    await fsp.copyFile(sourcePath, targetPath);
+  }
+}
+
+export async function syncPluginIntoCodexCache() {
+  const cacheBaseDir = getPluginCacheBaseDir();
+  const installedPluginRoot = getInstalledPluginRoot();
+  const tempRoot = path.join(cacheBaseDir, `local.tmp-${process.pid}-${Date.now()}`);
+
+  await ensureDir(cacheBaseDir);
+  await fsp.rm(tempRoot, { recursive: true, force: true });
+
+  const shouldSkip = (sourcePath, entry) => {
+    if (entry.name === ".git" || entry.name === "node_modules") {
+      return true;
+    }
+    if (sourcePath.startsWith(path.join(pluginRoot, "docs"))) {
+      return false;
+    }
+    return false;
+  };
+
+  await copyDirRecursive(pluginRoot, tempRoot, shouldSkip);
+  await fsp.rm(installedPluginRoot, { recursive: true, force: true });
+  await fsp.rename(tempRoot, installedPluginRoot);
+
+  return {
+    cacheBaseDir,
+    installedPluginRoot,
+  };
 }
 
 export async function readJson(filePath, fallback = null) {

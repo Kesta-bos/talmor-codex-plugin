@@ -13,10 +13,9 @@ import {
   getAgentsOverridePath,
   getConfigPath,
   getHooksPath,
+  getInstalledPluginRoot,
   getNpmCommand,
   getStatePaths,
-  hasHonchoSdkInstalled,
-  hasMorphSdkInstalled,
   healthcheckProxy,
   hooksManagedBy,
   isPidAlive,
@@ -43,6 +42,7 @@ import {
   removeTopLevelStringValue,
   setTopLevelStringValue,
   sleep,
+  syncPluginIntoCodexCache,
   upsertDeveloperInstructions,
   upsertPluginEnabled,
   writeConfigText,
@@ -148,22 +148,47 @@ function parseFloatSetting(value, fallback, fieldName, { min = null, max = null 
   return parsed;
 }
 
+function runtimeDependenciesInstalled(rootPath) {
+  return (
+    fs.existsSync(path.join(rootPath, "node_modules", "@morphllm", "morphsdk")) &&
+    fs.existsSync(path.join(rootPath, "node_modules", "@honcho-ai", "sdk"))
+  );
+}
+
 async function installDependencies() {
-  if (hasMorphSdkInstalled() && hasHonchoSdkInstalled()) {
-    return { installed: true, skipped: true };
+  async function installDependenciesForRoot(rootPath) {
+    if (runtimeDependenciesInstalled(rootPath)) {
+      return { rootPath, installed: true, skipped: true };
+    }
+    const npmCommand = getNpmCommand();
+    const result = spawnSync(npmCommand, ["install", "--omit=dev"], {
+      cwd: rootPath,
+      stdio: "pipe",
+      encoding: "utf8",
+    });
+    if (result.status !== 0) {
+      throw new Error(
+        `npm install 실패 (${rootPath}): ${result.stderr || result.stdout || `exit ${result.status}`}`.trim(),
+      );
+    }
+    return { rootPath, installed: true, skipped: false };
   }
-  const npmCommand = getNpmCommand();
-  const result = spawnSync(npmCommand, ["install", "--omit=dev"], {
-    cwd: pluginRoot,
-    stdio: "pipe",
-    encoding: "utf8",
-  });
-  if (result.status !== 0) {
-    throw new Error(
-      `npm install 실패: ${result.stderr || result.stdout || `exit ${result.status}`}`.trim(),
-    );
+
+  const installedPluginRoot = getInstalledPluginRoot();
+  const roots = [pluginRoot];
+  if (installedPluginRoot !== pluginRoot) {
+    roots.push(installedPluginRoot);
   }
-  return { installed: true, skipped: false };
+
+  const results = [];
+  for (const rootPath of roots) {
+    results.push(await installDependenciesForRoot(rootPath));
+  }
+
+  return {
+    installed: true,
+    roots: results,
+  };
 }
 
 async function stopProxyInternal() {
@@ -589,6 +614,7 @@ async function installCommand(args) {
   honchoConfig.enabled = honchoEnabled;
   const morphConfig = buildMorphConfig(args, previousMorphConfig);
 
+  const cacheSync = await syncPluginIntoCodexCache();
   const dependencyStatus = await installDependencies();
   await writeState(nextState);
   await writeCredentials({
@@ -616,6 +642,7 @@ async function installCommand(args) {
     upstreamBaseUrl,
     morphConfig,
     dependencyStatus,
+    cacheSync,
     proxyStatus,
     honchoEnabled,
     hooksStatus,
@@ -700,6 +727,7 @@ async function statusCommand() {
     ok: true,
     installed: Boolean(state),
     pluginRoot,
+    cachePluginRoot: getInstalledPluginRoot(),
     configPath: currentConfig.configPath,
     hooksPath,
     agentsOverridePath: getAgentsOverridePath(),
@@ -710,8 +738,10 @@ async function statusCommand() {
     honchoConfig,
     hasMorphApiKey: Boolean(credentials?.morphApiKey),
     hasHonchoApiKey: Boolean(credentials?.honchoApiKey),
-    hasMorphSdkInstalled: hasMorphSdkInstalled(),
-    hasHonchoSdkInstalled: hasHonchoSdkInstalled(),
+    hasMorphSdkInstalled: runtimeDependenciesInstalled(pluginRoot),
+    hasHonchoSdkInstalled: runtimeDependenciesInstalled(pluginRoot),
+    cacheMorphSdkInstalled: runtimeDependenciesInstalled(getInstalledPluginRoot()),
+    cacheHonchoSdkInstalled: runtimeDependenciesInstalled(getInstalledPluginRoot()),
     pid,
     pidAlive: isPidAlive(pid),
     proxyHealthy,
