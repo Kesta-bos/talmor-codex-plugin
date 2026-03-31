@@ -1,0 +1,39 @@
+{
+  "name": "talmor-codex-plugin",
+  "version": "0.1.0",
+  "description": "Codex에서 Morph Compact, Morph 도구, Honcho 메모리를 함께 사용할 수 있도록 구성한 통합 플러그인입니다.",
+  "author": "TalmorMaker",
+  "license": "UNLICENSED",
+  "keywords": [
+    "codex",
+    "plugin",
+    "compact",
+    "morph",
+    "flashcompact",
+    "warpgrep",
+    "fastapply",
+    "proxy",
+    "honcho",
+    "memory"
+  ],
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Talmor Codex Plugin",
+    "shortDescription": "Codex용 Morph 및 Honcho 통합 플러그인입니다.",
+    "longDescription": "최초 1회 /talmor-codex-plugin:install 실행 후 런타임이 자동으로 유지되며, Morph Compact 처리와 Morph 및 Honcho 연동 도구를 함께 사용할 수 있습니다.",
+    "developerName": "TalmorMaker",
+    "category": "Productivity",
+    "capabilities": [
+      "Remote compact replacement",
+      "Local runtime auto-start",
+      "Install and uninstall automation",
+      "Morph integration foundation",
+      "Honcho memory integration"
+    ],
+    "defaultPrompt": [
+      "Talmor Codex Plugin 상태를 먼저 확인하고, 필요하면 /talmor-codex-plugin:status 를 안내하세요."
+    ],
+    "brandColor": "#0f766e"
+  }
+}

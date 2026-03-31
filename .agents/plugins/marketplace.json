@@ -1,0 +1,20 @@
+{
+  "name": "talmor-local-plugins",
+  "interface": {
+    "displayName": "Talmor Local Plugins"
+  },
+  "plugins": [
+    {
+      "name": "talmor-codex-plugin",
+      "source": {
+        "source": "local",
+        "path": "./plugins/talmor-codex-plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

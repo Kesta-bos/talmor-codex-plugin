@@ -1,0 +1,10 @@
+{
+  "name": "talmor-codex-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@honcho-ai/sdk": "^2.0.0",
+    "@morphllm/morphsdk": "^0.2.157"
+  }
+}

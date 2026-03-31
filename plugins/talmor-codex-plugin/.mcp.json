@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "talmor_codex_plugin_runtime": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "./scripts/talmor-codex-plugin-runtime.mjs"
+      ],
+      "cwd": "./"
+    }
+  }
+}

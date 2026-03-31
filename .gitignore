@@ -1,0 +1,17 @@
+# Local reference material
+reference-repos/
+
+# Node dependencies
+node_modules/
+plugins/talmor-codex-plugin/node_modules/
+
+# Local env and logs
+.env
+.env.*
+*.log
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
