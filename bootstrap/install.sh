@@ -7,6 +7,11 @@ if [[ "${1:-}" == "--non-interactive" ]]; then
   shift
 fi
 
+bootstrap_args=()
+if [[ "${NON_INTERACTIVE}" == "1" ]]; then
+  bootstrap_args+=(--non-interactive)
+fi
+
 if [[ ! -t 1 ]]; then
   NO_COLOR=1
 fi
@@ -274,6 +279,17 @@ require_command node
 require_command npm
 
 clone_or_update_repo
+
+CURRENT_SCRIPT="${BASH_SOURCE[0]:-$0}"
+REEXEC_TARGET="${INSTALL_DIR}/bootstrap/install.sh"
+CURRENT_SCRIPT_REAL="$(realpath "${CURRENT_SCRIPT}" 2>/dev/null || printf '%s' "${CURRENT_SCRIPT}")"
+REEXEC_TARGET_REAL="$(realpath "${REEXEC_TARGET}" 2>/dev/null || printf '%s' "${REEXEC_TARGET}")"
+
+if [[ "${TALMOR_CODEX_PLUGIN_BOOTSTRAP_REEXECED:-0}" != "1" ]] && [[ "${CURRENT_SCRIPT_REAL}" != "${REEXEC_TARGET_REAL}" ]]; then
+  info "최신 bootstrap 스크립트로 다시 실행합니다."
+  export TALMOR_CODEX_PLUGIN_BOOTSTRAP_REEXECED=1
+  exec bash "${REEXEC_TARGET}" "${bootstrap_args[@]}"
+fi
 
 MORPH_API_KEY="${MORPH_API_KEY:-}"
 HONCHO_API_KEY="${HONCHO_API_KEY:-}"
