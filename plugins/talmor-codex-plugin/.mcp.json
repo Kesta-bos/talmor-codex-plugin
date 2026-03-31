@@ -6,6 +6,15 @@
       "args": [
         "./scripts/talmor-codex-plugin-runtime.mjs"
       ],
+      "env_vars": [
+        "PATH",
+        "HOME",
+        "USER",
+        "SHELL",
+        "CODEX_HOME",
+        "NVM_BIN",
+        "NVM_DIR"
+      ],
       "cwd": "./"
     }
   }
