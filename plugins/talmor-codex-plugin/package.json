@@ -5,6 +5,8 @@
   "type": "module",
   "dependencies": {
     "@honcho-ai/sdk": "^2.0.0",
-    "@morphllm/morphsdk": "^0.2.157"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@morphllm/morphsdk": "^0.2.157",
+    "zod": "^3.25.76"
   }
 }

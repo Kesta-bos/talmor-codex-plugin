@@ -3,9 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
 import {
-  hasMorphSdkInstalled,
-  pluginRoot,
   readCredentials,
   readHonchoConfig,
   readMorphConfig,
@@ -16,13 +17,6 @@ import {
   writeHonchoConfig,
 } from "./talmor-codex-plugin-common.mjs";
 import { ensureHonchoSession, loadHonchoRuntime } from "./talmor-codex-plugin-honcho.mjs";
-
-const protocolVersion = "2025-03-26";
-const serverInfo = {
-  name: "talmor-codex-plugin-runtime",
-  title: "Talmor Codex Plugin Runtime",
-  version: "0.2.0",
-};
 
 const MORPH_API_URL = "https://api.morphllm.com";
 const MORPH_TIMEOUT = 30000;
@@ -36,33 +30,24 @@ const __dirname = path.dirname(__filename);
 let morphClient = null;
 let warpGrepClient = null;
 
-function sendMessage(message) {
-  const json = Buffer.from(JSON.stringify(message), "utf8");
-  process.stdout.write(`Content-Length: ${json.length}\r\n\r\n`);
-  process.stdout.write(json);
-}
+const emptySchema = z.object({}).strict();
+const cwdField = { cwd: z.string().min(1).optional() };
+const serverInstructions = [
+  "Talmor Codex Plugin runtime exposes Morph Compact companion tools, WarpGrep search, Fast Apply edits, and Honcho memory helpers.",
+  "Prefer warpgrep_codebase_search for exploratory natural-language codebase questions.",
+  "Prefer warpgrep_github_search for public GitHub repository exploration without cloning.",
+  "Prefer morph_edit for large or scattered file edits; use native edit for tiny exact replacements.",
+  "Use Honcho tools for persistent user/workflow memory only when relevant to prior decisions or preferences.",
+].join(" ");
 
-function sendResponse(id, result) {
-  sendMessage({
-    jsonrpc: "2.0",
-    id,
-    result,
-  });
+function toolAnnotations({ readOnly = false, openWorld = false }) {
+  return {
+    title: undefined,
+    readOnlyHint: readOnly,
+    destructiveHint: !readOnly,
+    openWorldHint: openWorld,
+  };
 }
-
-function sendError(id, code, message) {
-  sendMessage({
-    jsonrpc: "2.0",
-    id,
-    error: {
-      code,
-      message,
-    },
-  });
-}
-
-let buffer = Buffer.alloc(0);
-const pendingRequests = new Set();
 
 async function handleAdminCommand(command) {
   const child = spawn(process.execPath, [path.join(__dirname, "talmor-codex-plugin-admin.mjs"), command], {
@@ -435,239 +420,195 @@ async function handleHonchoSetConfig(args) {
   );
 }
 
-async function handleRequest(message) {
-  const { id, method, params } = message;
-  switch (method) {
-    case "initialize": {
-      try {
-        await handleAdminCommand("ensure-proxy");
-      } catch {}
-      sendResponse(id, {
-        protocolVersion,
-        capabilities: {
-          tools: {
-            listChanged: false,
-          },
-        },
-        serverInfo,
-      });
-      return;
-    }
-    case "notifications/initialized":
-      return;
-    case "tools/list":
-      sendResponse(id, {
-        tools: [
-          {
-            name: "talmor_codex_plugin_status",
-            description: "Talmor Codex Plugin runtime과 설치 상태를 확인합니다.",
-            inputSchema: { type: "object", properties: {}, additionalProperties: false },
-          },
-          {
-            name: "talmor_codex_plugin_restart_runtime",
-            description: "Talmor Codex Plugin compact runtime을 재시작합니다.",
-            inputSchema: { type: "object", properties: {}, additionalProperties: false },
-          },
-          {
-            name: "talmor_codex_plugin_stop_runtime",
-            description: "Talmor Codex Plugin compact runtime을 중지합니다.",
-            inputSchema: { type: "object", properties: {}, additionalProperties: false },
-          },
-          {
-            name: "morph_edit",
-            description:
-              "Edit existing files using Morph Fast Apply. Prefer this for large files, scattered edits, or refactors inside an existing file. For tiny exact replacements, use native edit instead. Pass cwd when possible so relative target paths resolve correctly.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                cwd: { type: "string" },
-                agent: { type: "string" },
-                target_filepath: { type: "string" },
-                instructions: { type: "string" },
-                code_edit: { type: "string" },
-              },
-              required: ["target_filepath", "instructions", "code_edit"],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: "warpgrep_codebase_search",
-            description:
-              "Fast exploratory local codebase search powered by Morph WarpGrep. Use this for natural-language codebase questions, not exact keyword lookup.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                cwd: { type: "string" },
-                search_term: { type: "string" },
-              },
-              required: ["search_term"],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: "warpgrep_github_search",
-            description:
-              "Search indexed public GitHub repositories without cloning them. Use owner_repo or github_url, plus a natural-language search_term.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                search_term: { type: "string" },
-                owner_repo: { type: "string" },
-                github_url: { type: "string" },
-                branch: { type: "string" },
-              },
-              required: ["search_term"],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: "honcho_search",
-            description: "Search the current Honcho session memory using semantic retrieval.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                cwd: { type: "string" },
-                query: { type: "string" },
-                limit: { type: "number" },
-              },
-              required: ["query"],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: "honcho_chat",
-            description: "Ask Honcho what it knows about the user and prior work in the current session context.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                cwd: { type: "string" },
-                query: { type: "string" },
-                reasoning_level: { type: "string" },
-              },
-              required: ["query"],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: "honcho_create_conclusion",
-            description: "Persist a new user preference, decision, or stable fact into Honcho memory.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                cwd: { type: "string" },
-                content: { type: "string" },
-              },
-              required: ["content"],
-              additionalProperties: false,
-            },
-          },
-          {
-            name: "honcho_get_config",
-            description: "Return the current Honcho runtime configuration and last observed session state.",
-            inputSchema: { type: "object", properties: {}, additionalProperties: false },
-          },
-          {
-            name: "honcho_set_config",
-            description: "Update Honcho runtime settings. workspace and baseUrl changes require confirm=true.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                field: { type: "string" },
-                value: {},
-                confirm: { type: "boolean" },
-              },
-              required: ["field", "value"],
-              additionalProperties: false,
-            },
-          },
-        ],
-      });
-      return;
-    case "tools/call": {
-      const name = params?.name;
-      const args = params?.arguments || {};
-      try {
-        let payload;
-        if (name === "talmor_codex_plugin_status") {
-          payload = toolResultText(safeJson(await handleAdminCommand("status")));
-        } else if (name === "talmor_codex_plugin_restart_runtime") {
-          payload = toolResultText(safeJson(await handleAdminCommand("restart-proxy")));
-        } else if (name === "talmor_codex_plugin_stop_runtime") {
-          payload = toolResultText(safeJson(await handleAdminCommand("stop-proxy")));
-        } else if (name === "morph_edit") {
-          payload = await handleMorphEdit(args);
-        } else if (name === "warpgrep_codebase_search") {
-          payload = await handleWarpGrepCodebaseSearch(args);
-        } else if (name === "warpgrep_github_search") {
-          payload = await handleWarpGrepGithubSearch(args);
-        } else if (name === "honcho_search") {
-          payload = await handleHonchoSearch(args);
-        } else if (name === "honcho_chat") {
-          payload = await handleHonchoChat(args);
-        } else if (name === "honcho_create_conclusion") {
-          payload = await handleHonchoCreateConclusion(args);
-        } else if (name === "honcho_get_config") {
-          payload = await handleHonchoGetConfig(args);
-        } else if (name === "honcho_set_config") {
-          payload = await handleHonchoSetConfig(args);
-        } else {
-          sendError(id, -32602, `unknown tool: ${name}`);
-          return;
-        }
-        sendResponse(id, payload);
-      } catch (error) {
-        sendResponse(id, toolResultText(error instanceof Error ? error.message : String(error), true));
-      }
-      return;
-    }
-    default:
-      sendError(id, -32601, `unsupported method: ${method}`);
-  }
-}
-
-function processBuffer() {
-  while (true) {
-    const headerEnd = buffer.indexOf("\r\n\r\n");
-    if (headerEnd === -1) {
-      return;
-    }
-    const header = buffer.slice(0, headerEnd).toString("utf8");
-    const lengthMatch = header.match(/Content-Length:\s*(\d+)/i);
-    if (!lengthMatch) {
-      buffer = Buffer.alloc(0);
-      return;
-    }
-    const contentLength = Number.parseInt(lengthMatch[1], 10);
-    const frameLength = headerEnd + 4 + contentLength;
-    if (buffer.length < frameLength) {
-      return;
-    }
-    const body = buffer.slice(headerEnd + 4, frameLength).toString("utf8");
-    buffer = buffer.slice(frameLength);
-    let message;
+function wrapTool(name, handler) {
+  return async (args = {}) => {
     try {
-      message = JSON.parse(body);
+      return await handler(args);
     } catch (error) {
-      sendError(null, -32700, error instanceof Error ? error.message : String(error));
-      continue;
+      const message = error instanceof Error ? error.message : String(error);
+      return toolResultText(`[${name}] ${message}`, true);
     }
-
-    const pending = handleRequest(message).catch((error) => {
-      if (message?.id != null) {
-        sendError(message.id, -32603, error instanceof Error ? error.message : String(error));
-      }
-    });
-    pendingRequests.add(pending);
-    pending.finally(() => pendingRequests.delete(pending));
-  }
+  };
 }
 
-process.stdin.on("data", (chunk) => {
-  buffer = Buffer.concat([buffer, chunk]);
-  processBuffer();
-});
+const server = new McpServer(
+  {
+    name: "talmor-codex-plugin-runtime",
+    title: "Talmor Codex Plugin Runtime",
+    version: "0.3.0",
+  },
+  {
+    instructions: serverInstructions,
+    capabilities: {
+      logging: {},
+    },
+  },
+);
 
-process.stdin.on("end", async () => {
-  await Promise.allSettled([...pendingRequests]);
-  process.exit(0);
+server.registerTool(
+  "talmor_codex_plugin_status",
+  {
+    description: "Talmor Codex Plugin runtime과 설치 상태를 확인합니다.",
+    inputSchema: emptySchema,
+    annotations: toolAnnotations({ readOnly: true, openWorld: false }),
+  },
+  wrapTool("talmor_codex_plugin_status", async () => toolResultText(safeJson(await handleAdminCommand("status")))),
+);
+
+server.registerTool(
+  "talmor_codex_plugin_restart_runtime",
+  {
+    description: "Talmor Codex Plugin compact runtime을 재시작합니다.",
+    inputSchema: emptySchema,
+    annotations: toolAnnotations({ readOnly: false, openWorld: false }),
+  },
+  wrapTool("talmor_codex_plugin_restart_runtime", async () => toolResultText(safeJson(await handleAdminCommand("restart-proxy")))),
+);
+
+server.registerTool(
+  "talmor_codex_plugin_stop_runtime",
+  {
+    description: "Talmor Codex Plugin compact runtime을 중지합니다.",
+    inputSchema: emptySchema,
+    annotations: toolAnnotations({ readOnly: false, openWorld: false }),
+  },
+  wrapTool("talmor_codex_plugin_stop_runtime", async () => toolResultText(safeJson(await handleAdminCommand("stop-proxy")))),
+);
+
+server.registerTool(
+  "morph_edit",
+  {
+    description:
+      "Edit existing files using Morph Fast Apply. Prefer this for large files, scattered edits, or refactors inside an existing file. For tiny exact replacements, use native edit instead. Pass cwd when possible so relative target paths resolve correctly.",
+    inputSchema: z
+      .object({
+        ...cwdField,
+        agent: z.string().min(1).optional(),
+        target_filepath: z.string().min(1),
+        instructions: z.string().min(1),
+        code_edit: z.string().min(1),
+      })
+      .strict(),
+    annotations: toolAnnotations({ readOnly: false, openWorld: false }),
+  },
+  wrapTool("morph_edit", handleMorphEdit),
+);
+
+server.registerTool(
+  "warpgrep_codebase_search",
+  {
+    description:
+      "Fast exploratory local codebase search powered by Morph WarpGrep. Use this for natural-language codebase questions, not exact keyword lookup.",
+    inputSchema: z
+      .object({
+        ...cwdField,
+        search_term: z.string().min(1),
+      })
+      .strict(),
+    annotations: toolAnnotations({ readOnly: true, openWorld: false }),
+  },
+  wrapTool("warpgrep_codebase_search", handleWarpGrepCodebaseSearch),
+);
+
+server.registerTool(
+  "warpgrep_github_search",
+  {
+    description:
+      "Search indexed public GitHub repositories without cloning them. Use owner_repo or github_url, plus a natural-language search_term.",
+    inputSchema: z
+      .object({
+        search_term: z.string().min(1),
+        owner_repo: z.string().min(1).optional(),
+        github_url: z.string().url().optional(),
+        branch: z.string().min(1).optional(),
+      })
+      .strict(),
+    annotations: toolAnnotations({ readOnly: true, openWorld: true }),
+  },
+  wrapTool("warpgrep_github_search", handleWarpGrepGithubSearch),
+);
+
+server.registerTool(
+  "honcho_search",
+  {
+    description: "Search the current Honcho session memory using semantic retrieval.",
+    inputSchema: z
+      .object({
+        ...cwdField,
+        query: z.string().min(1),
+        limit: z.number().int().positive().optional(),
+      })
+      .strict(),
+    annotations: toolAnnotations({ readOnly: true, openWorld: true }),
+  },
+  wrapTool("honcho_search", handleHonchoSearch),
+);
+
+server.registerTool(
+  "honcho_chat",
+  {
+    description: "Ask Honcho what it knows about the user and prior work in the current session context.",
+    inputSchema: z
+      .object({
+        ...cwdField,
+        query: z.string().min(1),
+        reasoning_level: z.string().min(1).optional(),
+      })
+      .strict(),
+    annotations: toolAnnotations({ readOnly: true, openWorld: true }),
+  },
+  wrapTool("honcho_chat", handleHonchoChat),
+);
+
+server.registerTool(
+  "honcho_create_conclusion",
+  {
+    description: "Persist a new user preference, decision, or stable fact into Honcho memory.",
+    inputSchema: z
+      .object({
+        ...cwdField,
+        content: z.string().min(1),
+      })
+      .strict(),
+    annotations: toolAnnotations({ readOnly: false, openWorld: true }),
+  },
+  wrapTool("honcho_create_conclusion", handleHonchoCreateConclusion),
+);
+
+server.registerTool(
+  "honcho_get_config",
+  {
+    description: "Return the current Honcho runtime configuration and last observed session state.",
+    inputSchema: emptySchema,
+    annotations: toolAnnotations({ readOnly: true, openWorld: false }),
+  },
+  wrapTool("honcho_get_config", handleHonchoGetConfig),
+);
+
+server.registerTool(
+  "honcho_set_config",
+  {
+    description: "Update Honcho runtime settings. workspace and baseUrl changes require confirm=true.",
+    inputSchema: z
+      .object({
+        field: z.string().min(1),
+        value: z.unknown(),
+        confirm: z.boolean().optional(),
+      })
+      .strict(),
+    annotations: toolAnnotations({ readOnly: false, openWorld: false }),
+  },
+  wrapTool("honcho_set_config", handleHonchoSetConfig),
+);
+
+async function main() {
+  process.stdin.resume();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
+
+main().catch((error) => {
+  const message = error instanceof Error ? error.stack || error.message : String(error);
+  process.stderr.write(`${message}\n`);
+  process.exit(1);
 });

@@ -79,6 +79,48 @@ export function getInstalledPluginRoot() {
   return path.join(getPluginCacheBaseDir(), "local");
 }
 
+export function resolveNodeExecutable() {
+  if (process.execPath && path.isAbsolute(process.execPath)) {
+    return process.execPath;
+  }
+
+  const result = spawnSync("node", ["-p", "process.execPath"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const resolved = `${result.stdout ?? ""}`.trim();
+  if (result.status === 0 && resolved && path.isAbsolute(resolved)) {
+    return resolved;
+  }
+
+  return "node";
+}
+
+async function rewritePluginMcpConfigCommand(targetPluginRoot) {
+  const mcpConfigPath = path.join(targetPluginRoot, ".mcp.json");
+  const current = await readJson(mcpConfigPath, null);
+  if (!current || typeof current !== "object" || !current.mcpServers || typeof current.mcpServers !== "object") {
+    return;
+  }
+
+  const server = current.mcpServers.talmor_codex_plugin_runtime;
+  if (!server || typeof server !== "object") {
+    return;
+  }
+
+  const next = {
+    ...current,
+    mcpServers: {
+      ...current.mcpServers,
+      talmor_codex_plugin_runtime: {
+        ...server,
+        command: resolveNodeExecutable(),
+      },
+    },
+  };
+  await writeJson(mcpConfigPath, next);
+}
+
 export function getHooksPath() {
   return path.join(getCodexHome(), "hooks.json");
 }
@@ -150,6 +192,7 @@ export async function syncPluginIntoCodexCache() {
   };
 
   await copyDirRecursive(pluginRoot, tempRoot, shouldSkip);
+  await rewritePluginMcpConfigCommand(tempRoot);
   await fsp.rm(installedPluginRoot, { recursive: true, force: true });
   await fsp.rename(tempRoot, installedPluginRoot);
 
