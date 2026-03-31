@@ -160,7 +160,14 @@ clone_or_update_repo() {
 
   if [[ -d "${INSTALL_DIR}/.git" ]]; then
     info "기존 bootstrap repo를 업데이트합니다: ${INSTALL_DIR}"
-    git -C "${INSTALL_DIR}" pull --ff-only
+    if [[ -n "$(git -C "${INSTALL_DIR}" status --short)" ]]; then
+      warn "관리용 bootstrap repo에 로컬 변경사항이 있어 origin/main 기준으로 정리합니다."
+      git -C "${INSTALL_DIR}" reset --hard HEAD >/dev/null
+      git -C "${INSTALL_DIR}" clean -fd >/dev/null
+    fi
+    git -C "${INSTALL_DIR}" fetch --prune origin
+    git -C "${INSTALL_DIR}" checkout -q main
+    git -C "${INSTALL_DIR}" reset --hard origin/main
   elif [[ -d "${INSTALL_DIR}" ]]; then
     fail "이미 존재하지만 git repo가 아닌 디렉터리입니다: ${INSTALL_DIR}"
   else
